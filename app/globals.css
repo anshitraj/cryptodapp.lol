@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-wordmark: var(--font-titan), ui-sans-serif, system-ui, sans-serif;
+
+  --color-bg: #ebedf0;
+  --color-card: #ffffff;
+  --color-border: #e3e6eb;
+
+  --color-ink: #172033;
+  --color-ink-soft: #4b5568;
+  --color-ink-faint: #8993a4;
+
+  --color-blue: #2f86ff;
+  --color-blue-deep: #1c63d6;
+  --color-blue-soft: #cfe3ff;
+  --color-blue-claim: #6fa8ff;
+
+  --color-green: #16a34a;
+  --color-green-soft: #dcf6e6;
+
+  --color-peach: #fbd3a4;
+  --color-peach-ink: #b45309;
+
+  --radius-pill: 999px;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+.wordmark {
+  font-family: var(--font-wordmark);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  color: #ffffff;
+  -webkit-text-stroke: 3px var(--color-blue-deep);
+  paint-order: stroke fill;
+  text-shadow:
+    0 0 14px rgba(255, 255, 255, 0.6),
+    3px 4px 0 rgba(28, 99, 214, 0.45);
+}
+
+.wordmark-accent {
+  color: var(--color-blue);
+  -webkit-text-stroke: 0;
+  text-shadow: none;
+}
+
+/* Loud animated backdrop — fixed behind everything, z-index -1 so normal
+   content stacks above it without needing its own z-index. */
+.bg-loud {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  background: var(--color-bg);
+}
+
+.bg-loud::before,
+.bg-loud::after,
+.bg-loud .blob-green {
+  content: "";
+  position: absolute;
+  width: 55vmax;
+  height: 55vmax;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.5;
+}
+
+.bg-loud::before {
+  background: radial-gradient(circle, var(--color-blue) 0%, transparent 70%);
+  top: -18%;
+  left: -12%;
+  animation: drift-a 24s ease-in-out infinite alternate;
+}
+
+.bg-loud::after {
+  background: radial-gradient(circle, var(--color-peach) 0%, transparent 70%);
+  bottom: -22%;
+  right: -12%;
+  animation: drift-b 20s ease-in-out infinite alternate;
+}
+
+.bg-loud .blob-green {
+  background: radial-gradient(circle, var(--color-green) 0%, transparent 70%);
+  top: 28%;
+  left: 38%;
+  opacity: 0.35;
+  animation: drift-a 28s ease-in-out infinite alternate-reverse;
+}
+
+@keyframes drift-a {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(6vw, 8vh) scale(1.15); }
+}
+
+@keyframes drift-b {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(-7vw, -5vh) scale(1.1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bg-loud::before,
+  .bg-loud::after,
+  .bg-loud .blob-green {
+    animation: none;
+  }
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow: 0 8px 32px rgba(23, 32, 51, 0.08);
+}
