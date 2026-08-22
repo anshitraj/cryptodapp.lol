@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { PublicKey } from "@solana/web3.js";
+import { useAccount } from "wagmi";
+import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { buildSolanaTransfer } from "@/lib/chain/solanaWallet";
 import { payEvmToken } from "@/lib/chain/evmWallet";
 import { ChainKey, EvmChainKey, TokenSymbol } from "@/lib/chain/constants";
@@ -32,12 +34,16 @@ export default function PayStep({
 }) {
   const { connection } = useConnection();
   const { wallets, wallet, select, connect, connected, publicKey, sendTransaction } = useWallet();
+  const { isConnected: evmConnected } = useAccount();
+  const { openConnectModal, connectModalOpen } = useConnectModal();
   const [stage, setStage] = useState<Stage>("choose-chain");
   const [chain, setChain] = useState<ChainKey | null>(null);
   const [token, setToken] = useState<TokenSymbol | null>(null);
   const [error, setError] = useState("");
   const [listing, setListing] = useState<EditableListing | null>(null);
   const wantsSolanaPay = useRef(false);
+  const wantsEvmPay = useRef<{ chain: EvmChainKey; token: TokenSymbol } | null>(null);
+  const prevModalOpen = useRef(false);
 
   async function confirmWithServer(chosenChain: ChainKey, chosenToken: TokenSymbol, txRef: string) {
     setStage("confirming");
@@ -126,9 +132,9 @@ export default function PayStep({
     setStage("paying");
   }
 
-  async function startEvm(chosenChain: EvmChainKey, chosenToken: TokenSymbol) {
-    setError("");
+  async function runEvmPayment(chosenChain: EvmChainKey, chosenToken: TokenSymbol) {
     setStage("paying");
+    setError("");
     try {
       const hash = await payEvmToken(chosenChain, chosenToken, treasury.evm as `0x${string}`, amountUsd);
       await confirmWithServer(chosenChain, chosenToken, hash);
@@ -137,6 +143,39 @@ export default function PayStep({
       setStage("error");
     }
   }
+
+  function startEvm(chosenChain: EvmChainKey, chosenToken: TokenSymbol) {
+    setError("");
+    if (!evmConnected) {
+      wantsEvmPay.current = { chain: chosenChain, token: chosenToken };
+      setStage("paying");
+      openConnectModal?.();
+      return;
+    }
+    runEvmPayment(chosenChain, chosenToken);
+  }
+
+  // RainbowKit's connect modal is fire-and-forget from here — pick the
+  // payment back up once wagmi reports a connected account.
+  useEffect(() => {
+    if (wantsEvmPay.current && evmConnected) {
+      const pending = wantsEvmPay.current;
+      wantsEvmPay.current = null;
+      runEvmPayment(pending.chain, pending.token);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [evmConnected]);
+
+  // If they close the modal without connecting, don't leave the UI stuck
+  // on "paying".
+  useEffect(() => {
+    if (prevModalOpen.current && !connectModalOpen && !evmConnected && wantsEvmPay.current) {
+      wantsEvmPay.current = null;
+      setError("Wallet connection cancelled.");
+      setStage("error");
+    }
+    prevModalOpen.current = connectModalOpen ?? false;
+  }, [connectModalOpen, evmConnected]);
 
   function pickToken(t: TokenSymbol) {
     setToken(t);

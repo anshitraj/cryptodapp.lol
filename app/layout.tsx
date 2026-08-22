@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import { Inter, Titan_One } from "next/font/google";
 import SolanaProviders from "@/components/wallet/SolanaProviders";
+import EvmProviders from "@/components/wallet/EvmProviders";
 import "./globals.css";
 
 const inter = Inter({
@@ -36,7 +37,9 @@ export default function RootLayout({
         <div className="bg-loud" aria-hidden="true">
           <div className="blob-green" />
         </div>
-        <SolanaProviders>{children}</SolanaProviders>
+        <SolanaProviders>
+          <EvmProviders>{children}</EvmProviders>
+        </SolanaProviders>
         {umamiWebsiteId && (
           <Script src={umamiScriptUrl} data-website-id={umamiWebsiteId} strategy="afterInteractive" />
         )}
