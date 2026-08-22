@@ -15,9 +15,11 @@ import {
   EvmChainKey,
   FALLBACK_EVM_CHAIN,
   TokenSymbol,
+  chainsForToken,
   evmChainsForToken,
 } from "@/lib/chain/constants";
 import ListingEditor, { EditableListing } from "./ListingEditor";
+import TokenIcon from "./TokenIcon";
 
 type Treasury = { solana: string; evm: string };
 type Stage = "choose-token" | "choose-wallet" | "connecting" | "paying" | "confirming" | "done" | "error";
@@ -248,7 +250,7 @@ export default function PayStep({
     return (
       <div className="flex flex-col items-center gap-4">
         <p className="text-sm text-ink-soft">Pay ${amountUsd} — choose a stablecoin</p>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap justify-center gap-3">
           {(["USDC", "USDT"] as TokenSymbol[]).map((t) => (
             <button
               key={t}
@@ -256,15 +258,23 @@ export default function PayStep({
                 setToken(t);
                 setStage("choose-wallet");
               }}
-              className="glass rounded-full px-8 py-3 text-sm font-semibold text-ink hover:border-blue"
+              className="glass flex flex-col items-center gap-1.5 rounded-2xl px-8 py-4 hover:border-blue"
             >
-              {t}
+              <span className="flex items-center gap-2 text-sm font-semibold text-ink">
+                <TokenIcon token={t} />
+                {t}
+              </span>
+              <span className="text-[11px] text-ink-faint">
+                {chainsForToken(t)
+                  .map((c) => CHAIN_LABELS[c])
+                  .join(" · ")}
+              </span>
             </button>
           ))}
         </div>
         <p className="max-w-sm text-center text-xs text-ink-faint">
-          Works on Solana, Ethereum, Base, BNB Chain and Polygon — we use whichever
-          network your wallet is already on.
+          We use whichever of those networks your wallet is already on — no chain
+          picker needed.
         </p>
       </div>
     );
@@ -279,8 +289,8 @@ export default function PayStep({
 
     return (
       <div className="flex flex-col items-center gap-5">
-        <p className="text-sm text-ink-soft">
-          Pay ${amountUsd} in {token} — connect a wallet
+        <p className="flex items-center gap-2 text-sm text-ink-soft">
+          Pay ${amountUsd} in <TokenIcon token={token} size={16} /> {token} — connect a wallet
         </p>
 
         <div className="flex w-full max-w-sm flex-col gap-2">
@@ -325,8 +335,8 @@ export default function PayStep({
 
   return (
     <div className="flex flex-col items-center gap-3">
-      <p className="text-sm text-ink-soft">
-        Paying ${amountUsd} in {token}
+      <p className="flex items-center gap-2 text-sm text-ink-soft">
+        Paying ${amountUsd} in {token && <TokenIcon token={token} size={16} />} {token}
         {payingOn ? ` on ${CHAIN_LABELS[payingOn]}` : ""}
       </p>
       {stage === "connecting" && (

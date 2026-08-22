@@ -101,6 +101,12 @@ export function evmChainConfig(chain: EvmChainKey): EvmChainConfig {
   return EVM_CHAINS[chain];
 }
 
+// All chains (Solana included) that accept a given token — for surfacing
+// "USDC works on X, Y, Z" copy before someone picks a wallet.
+export function chainsForToken(token: TokenSymbol): ChainKey[] {
+  return ["solana", ...evmChainsForToken(token)];
+}
+
 export function evmTokenInfo(chain: EvmChainKey, token: TokenSymbol): TokenInfo {
   const info = EVM_CHAINS[chain].tokens[token];
   if (!info) throw new Error(`${token} is not offered on ${EVM_CHAINS[chain].name}`);
