@@ -41,6 +41,23 @@ export async function POST(
     return NextResponse.json({ ok: true, alreadyPaid: true, listing });
   }
 
+  // One transaction pays for exactly one bid. The unique index in the schema
+  // is the real guarantee (it also settles concurrent requests racing on the
+  // same hash); this check just turns that into a readable error.
+  const { data: alreadyUsed } = await db
+    .from("bids")
+    .select("id")
+    .eq("tx_signature", txRef)
+    .eq("status", "paid")
+    .maybeSingle();
+
+  if (alreadyUsed) {
+    return NextResponse.json(
+      { ok: false, reason: "that transaction has already been used to pay for another bid" },
+      { status: 409 }
+    );
+  }
+
   const requestedUsd = Number(bid.requested_usd);
   const result =
     chain === "solana"
@@ -66,6 +83,14 @@ export async function POST(
     .eq("id", bidId);
 
   if (updateError) {
+    // 23505 = the tx_signature unique index fired, i.e. another request paid
+    // out this same transaction in the moment between our check and write.
+    if (updateError.code === "23505") {
+      return NextResponse.json(
+        { ok: false, reason: "that transaction has already been used to pay for another bid" },
+        { status: 409 }
+      );
+    }
     return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
 

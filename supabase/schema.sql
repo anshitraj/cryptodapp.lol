@@ -29,6 +29,14 @@ create table if not exists bids (
 create index if not exists bids_listing_id_idx on bids(listing_id);
 create index if not exists bids_status_idx on bids(status);
 
+-- One on-chain transaction can only ever pay for one bid. Without this,
+-- the same tx hash could be replayed across unlimited bids — pay once,
+-- get listed as many times as you like. Scoped to paid rows so a failed
+-- attempt can legitimately be retried with the same hash.
+create unique index if not exists bids_tx_signature_unique
+  on bids(tx_signature)
+  where tx_signature is not null and status = 'paid';
+
 create or replace function increment_listing_clicks(listing_id uuid)
 returns void as $$
   update listings set clicks = clicks + 1 where id = listing_id;

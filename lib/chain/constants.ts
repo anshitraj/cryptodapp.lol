@@ -69,6 +69,34 @@ export const SOLANA_TOKENS: Record<TokenSymbol, TokenInfo> = {
   USDT: { address: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", decimals: 6 },
 };
 
+export const CHAIN_LABELS: Record<ChainKey, string> = {
+  solana: "Solana",
+  ethereum: "Ethereum",
+  base: "Base",
+  bsc: "BNB Chain",
+  polygon: "Polygon",
+};
+
+export const CHAIN_ID_TO_KEY: Record<number, EvmChainKey> = {
+  1: "ethereum",
+  56: "bsc",
+  137: "polygon",
+  8453: "base",
+};
+
+// Which EVM chains actually carry this token — Base has no USDT we're
+// willing to accept (see the note on EVM_CHAINS.base).
+export function evmChainsForToken(token: TokenSymbol): EvmChainKey[] {
+  return (Object.keys(EVM_CHAINS) as EvmChainKey[]).filter((c) => EVM_CHAINS[c].tokens[token]);
+}
+
+// Where to send someone whose wallet is sitting on a chain we don't take.
+// Both picks are the cheapest-gas option that carries the token.
+export const FALLBACK_EVM_CHAIN: Record<TokenSymbol, EvmChainKey> = {
+  USDC: "base",
+  USDT: "polygon",
+};
+
 export function evmChainConfig(chain: EvmChainKey): EvmChainConfig {
   return EVM_CHAINS[chain];
 }

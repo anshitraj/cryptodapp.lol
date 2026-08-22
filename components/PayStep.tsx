@@ -2,24 +2,25 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { WalletReadyState } from "@solana/wallet-adapter-base";
 import { PublicKey } from "@solana/web3.js";
 import { useAccount } from "wagmi";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { buildSolanaTransfer } from "@/lib/chain/solanaWallet";
 import { payEvmToken } from "@/lib/chain/evmWallet";
-import { ChainKey, EvmChainKey, TokenSymbol } from "@/lib/chain/constants";
+import {
+  CHAIN_ID_TO_KEY,
+  CHAIN_LABELS,
+  ChainKey,
+  EvmChainKey,
+  FALLBACK_EVM_CHAIN,
+  TokenSymbol,
+  evmChainsForToken,
+} from "@/lib/chain/constants";
 import ListingEditor, { EditableListing } from "./ListingEditor";
 
 type Treasury = { solana: string; evm: string };
-type Stage = "choose-chain" | "choose-token" | "picking-wallet" | "paying" | "confirming" | "done" | "error";
-
-const CHAINS: { key: ChainKey; label: string; tokens: TokenSymbol[] }[] = [
-  { key: "solana", label: "Solana", tokens: ["USDC", "USDT"] },
-  { key: "ethereum", label: "Ethereum", tokens: ["USDC", "USDT"] },
-  { key: "base", label: "Base", tokens: ["USDC"] },
-  { key: "bsc", label: "BNB Chain", tokens: ["USDC", "USDT"] },
-  { key: "polygon", label: "Polygon", tokens: ["USDC", "USDT"] },
-];
+type Stage = "choose-token" | "choose-wallet" | "paying" | "confirming" | "done" | "error";
 
 export default function PayStep({
   bidId,
@@ -33,25 +34,40 @@ export default function PayStep({
   onDone: () => void;
 }) {
   const { connection } = useConnection();
-  const { wallets, wallet, select, connect, connected, publicKey, sendTransaction } = useWallet();
-  const { isConnected: evmConnected } = useAccount();
+  const {
+    wallets,
+    wallet: solanaWallet,
+    select,
+    connect,
+    connected: solanaConnected,
+    publicKey,
+    sendTransaction,
+  } = useWallet();
+  const { isConnected: evmConnected, chainId: evmChainId } = useAccount();
   const { openConnectModal, connectModalOpen } = useConnectModal();
-  const [stage, setStage] = useState<Stage>("choose-chain");
-  const [chain, setChain] = useState<ChainKey | null>(null);
+
+  const [stage, setStage] = useState<Stage>("choose-token");
   const [token, setToken] = useState<TokenSymbol | null>(null);
+  const [payingOn, setPayingOn] = useState<ChainKey | null>(null);
   const [error, setError] = useState("");
   const [listing, setListing] = useState<EditableListing | null>(null);
+
   const wantsSolanaPay = useRef(false);
-  const wantsEvmPay = useRef<{ chain: EvmChainKey; token: TokenSymbol } | null>(null);
+  const wantsEvmPay = useRef(false);
   const prevModalOpen = useRef(false);
 
-  async function confirmWithServer(chosenChain: ChainKey, chosenToken: TokenSymbol, txRef: string) {
+  function fail(message: string) {
+    setError(message);
+    setStage("error");
+  }
+
+  async function confirmWithServer(chain: ChainKey, chosenToken: TokenSymbol, txRef: string) {
     setStage("confirming");
     try {
       const res = await fetch(`/api/bids/${bidId}/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chain: chosenChain, token: chosenToken, txRef }),
+        body: JSON.stringify({ chain, token: chosenToken, txRef }),
       });
       const data = await res.json();
       if (res.ok && data.ok) {
@@ -59,17 +75,18 @@ export default function PayStep({
         setStage("done");
         onDone();
       } else {
-        setError(data.reason ?? data.error ?? "Payment could not be confirmed.");
-        setStage("error");
+        fail(data.reason ?? data.error ?? "Payment could not be confirmed.");
       }
     } catch (err) {
-      setError((err as Error).message);
-      setStage("error");
+      fail((err as Error).message);
     }
   }
 
-  async function sendSolanaPayment(chosenToken: TokenSymbol) {
+  // ---- Solana ----
+
+  async function runSolanaPayment(chosenToken: TokenSymbol) {
     if (!publicKey) return;
+    setPayingOn("solana");
     setStage("paying");
     setError("");
     try {
@@ -82,177 +99,179 @@ export default function PayStep({
       );
       await confirmWithServer("solana", chosenToken, signature);
     } catch (err) {
-      setError((err as Error).message);
-      setStage("error");
+      fail((err as Error).message);
     }
   }
 
-  // select() only updates which adapter is active — connect() has to follow
-  // once that state lands, so this fires the moment `wallet` changes.
+  // select() only flips which adapter is active — connect() has to follow
+  // once that state lands, so this fires the moment `solanaWallet` changes.
   useEffect(() => {
-    if (wantsSolanaPay.current && wallet && !connected) {
-      connect().catch((err) => {
-        setError((err as Error).message);
-        setStage("error");
-      });
+    if (wantsSolanaPay.current && solanaWallet && !solanaConnected) {
+      connect().catch((err) => fail((err as Error).message));
     }
-  }, [wallet, connected, connect]);
+  }, [solanaWallet, solanaConnected, connect]);
 
   useEffect(() => {
-    if (wantsSolanaPay.current && connected && publicKey && token) {
+    if (wantsSolanaPay.current && solanaConnected && publicKey && token) {
       wantsSolanaPay.current = false;
-      sendSolanaPayment(token);
+      runSolanaPayment(token);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected, publicKey]);
+  }, [solanaConnected, publicKey]);
 
-  function startSolana(chosenToken: TokenSymbol) {
+  function pickSolanaWallet(name: (typeof wallets)[number]["adapter"]["name"]) {
+    if (!token) return;
     setError("");
-    if (connected) {
-      sendSolanaPayment(chosenToken);
+    if (solanaConnected) {
+      runSolanaPayment(token);
       return;
     }
-    if (wallets.length === 0) {
-      setError("No Solana wallet found — install Phantom, Solflare, or Backpack.");
-      setStage("error");
-      return;
-    }
-    if (wallets.length === 1) {
-      wantsSolanaPay.current = true;
-      select(wallets[0].adapter.name);
-      setStage("paying");
-      return;
-    }
-    setStage("picking-wallet");
-  }
-
-  function pickWallet(name: (typeof wallets)[number]["adapter"]["name"]) {
     wantsSolanaPay.current = true;
     select(name);
     setStage("paying");
   }
 
-  async function runEvmPayment(chosenChain: EvmChainKey, chosenToken: TokenSymbol) {
-    setStage("paying");
+  // ---- EVM ----
+
+  async function runEvmPayment(chosenToken: TokenSymbol) {
     setError("");
+    // Pay on whatever chain the wallet is already on, as long as it carries
+    // the chosen token — no chain picker, no mismatch possible. Only fall
+    // back (and prompt a switch) if they're somewhere we don't accept.
+    const supported = evmChainsForToken(chosenToken);
+    const current = evmChainId ? CHAIN_ID_TO_KEY[evmChainId] : undefined;
+    const target = current && supported.includes(current) ? current : FALLBACK_EVM_CHAIN[chosenToken];
+
+    setPayingOn(target);
+    setStage("paying");
     try {
-      const hash = await payEvmToken(chosenChain, chosenToken, treasury.evm as `0x${string}`, amountUsd);
-      await confirmWithServer(chosenChain, chosenToken, hash);
+      const hash = await payEvmToken(target, chosenToken, treasury.evm as `0x${string}`, amountUsd);
+      await confirmWithServer(target, chosenToken, hash);
     } catch (err) {
-      setError((err as Error).message);
-      setStage("error");
+      fail((err as Error).message);
     }
   }
 
-  function startEvm(chosenChain: EvmChainKey, chosenToken: TokenSymbol) {
+  function startEvm() {
+    if (!token) return;
     setError("");
-    if (!evmConnected) {
-      wantsEvmPay.current = { chain: chosenChain, token: chosenToken };
-      setStage("paying");
-      openConnectModal?.();
+    if (evmConnected) {
+      runEvmPayment(token);
       return;
     }
-    runEvmPayment(chosenChain, chosenToken);
+    wantsEvmPay.current = true;
+    setStage("paying");
+    openConnectModal?.();
   }
 
-  // RainbowKit's connect modal is fire-and-forget from here — pick the
-  // payment back up once wagmi reports a connected account.
   useEffect(() => {
-    if (wantsEvmPay.current && evmConnected) {
-      const pending = wantsEvmPay.current;
-      wantsEvmPay.current = null;
-      runEvmPayment(pending.chain, pending.token);
+    if (wantsEvmPay.current && evmConnected && token) {
+      wantsEvmPay.current = false;
+      runEvmPayment(token);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [evmConnected]);
 
-  // If they close the modal without connecting, don't leave the UI stuck
-  // on "paying".
+  // Closing the connect modal without connecting shouldn't strand the UI on
+  // "paying".
   useEffect(() => {
     if (prevModalOpen.current && !connectModalOpen && !evmConnected && wantsEvmPay.current) {
-      wantsEvmPay.current = null;
-      setError("Wallet connection cancelled.");
-      setStage("error");
+      wantsEvmPay.current = false;
+      fail("Wallet connection cancelled.");
     }
     prevModalOpen.current = connectModalOpen ?? false;
   }, [connectModalOpen, evmConnected]);
 
-  function pickToken(t: TokenSymbol) {
-    setToken(t);
-    if (!chain) return;
-    if (chain === "solana") {
-      startSolana(t);
-    } else {
-      startEvm(chain, t);
-    }
+  // ---- render ----
+
+  function reset() {
+    wantsSolanaPay.current = false;
+    wantsEvmPay.current = false;
+    setStage("choose-token");
+    setToken(null);
+    setPayingOn(null);
+    setError("");
   }
 
   if (stage === "done") {
     if (listing) return <ListingEditor bidId={bidId} listing={listing} />;
-    return <p className="text-center font-semibold text-green">Payment confirmed — you're on the board.</p>;
+    return <p className="text-center font-semibold text-green">Payment confirmed — you&apos;re on the board.</p>;
   }
 
-  if (stage === "picking-wallet") {
-    return (
-      <div className="flex flex-col items-center gap-2">
-        <p className="text-sm text-ink-soft">Choose a Solana wallet</p>
-        {wallets.map((w) => (
-          <button
-            key={w.adapter.name}
-            onClick={() => pickWallet(w.adapter.name)}
-            className="glass w-full max-w-xs rounded-full px-5 py-3 text-sm font-semibold text-ink hover:border-blue"
-          >
-            {w.adapter.name}
-          </button>
-        ))}
-      </div>
-    );
-  }
-
-  if (stage === "choose-chain" || (stage === "error" && !chain)) {
+  if (stage === "choose-token") {
     return (
       <div className="flex flex-col items-center gap-4">
-        <p className="text-sm text-ink-soft">Pay ${amountUsd} — choose a chain</p>
-        <div className="flex flex-wrap justify-center gap-2">
-          {CHAINS.map((c) => (
-            <button
-              key={c.key}
-              onClick={() => {
-                setChain(c.key);
-                setError("");
-                setStage("choose-token");
-              }}
-              className="glass rounded-full px-5 py-3 text-sm font-semibold text-ink hover:border-blue"
-            >
-              {c.label}
-            </button>
-          ))}
-        </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
-      </div>
-    );
-  }
-
-  if (stage === "choose-token" && chain) {
-    const chainInfo = CHAINS.find((c) => c.key === chain)!;
-    return (
-      <div className="flex flex-col items-center gap-4">
-        <p className="text-sm text-ink-soft">
-          Pay ${amountUsd} on {chainInfo.label} — choose a token
-        </p>
-        <div className="flex gap-2">
-          {chainInfo.tokens.map((t) => (
+        <p className="text-sm text-ink-soft">Pay ${amountUsd} — choose a stablecoin</p>
+        <div className="flex gap-3">
+          {(["USDC", "USDT"] as TokenSymbol[]).map((t) => (
             <button
               key={t}
-              onClick={() => pickToken(t)}
-              className="glass rounded-full px-6 py-3 text-sm font-semibold text-ink hover:border-blue"
+              onClick={() => {
+                setToken(t);
+                setStage("choose-wallet");
+              }}
+              className="glass rounded-full px-8 py-3 text-sm font-semibold text-ink hover:border-blue"
             >
               {t}
             </button>
           ))}
         </div>
-        <button onClick={() => setStage("choose-chain")} className="text-xs text-ink-faint hover:text-ink">
-          ← choose a different chain
+        <p className="max-w-sm text-center text-xs text-ink-faint">
+          Works on Solana, Ethereum, Base, BNB Chain and Polygon — we use whichever
+          network your wallet is already on.
+        </p>
+      </div>
+    );
+  }
+
+  if (stage === "choose-wallet" && token) {
+    const solanaWallets = wallets.filter(
+      (w) =>
+        w.readyState === WalletReadyState.Installed ||
+        w.readyState === WalletReadyState.Loadable
+    );
+
+    return (
+      <div className="flex flex-col items-center gap-5">
+        <p className="text-sm text-ink-soft">
+          Pay ${amountUsd} in {token} — connect a wallet
+        </p>
+
+        <div className="flex w-full max-w-sm flex-col gap-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-faint">Solana</p>
+          {solanaWallets.length > 0 ? (
+            solanaWallets.map((w) => (
+              <button
+                key={w.adapter.name}
+                onClick={() => pickSolanaWallet(w.adapter.name)}
+                className="glass flex items-center gap-3 rounded-2xl px-5 py-3 text-sm font-semibold text-ink hover:border-blue"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={w.adapter.icon} alt="" className="h-5 w-5 rounded" />
+                {w.adapter.name}
+              </button>
+            ))
+          ) : (
+            <p className="text-xs text-ink-faint">
+              No Solana wallet detected — install Phantom, Solflare, or Backpack.
+            </p>
+          )}
+        </div>
+
+        <div className="flex w-full max-w-sm flex-col gap-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+            Ethereum · Base · BNB Chain · Polygon
+          </p>
+          <button
+            onClick={startEvm}
+            className="glass rounded-2xl px-5 py-3 text-sm font-semibold text-ink hover:border-blue"
+          >
+            MetaMask, Rainbow, Trust &amp; more
+          </button>
+        </div>
+
+        <button onClick={reset} className="text-xs text-ink-faint hover:text-ink">
+          ← pay in a different stablecoin
         </button>
       </div>
     );
@@ -261,22 +280,15 @@ export default function PayStep({
   return (
     <div className="flex flex-col items-center gap-3">
       <p className="text-sm text-ink-soft">
-        Pay ${amountUsd} in {token} on {CHAINS.find((c) => c.key === chain)?.label}
+        Paying ${amountUsd} in {token}
+        {payingOn ? ` on ${CHAIN_LABELS[payingOn]}` : ""}
       </p>
       {stage === "paying" && <p className="text-sm text-ink-faint">Confirm the transfer in your wallet…</p>}
       {stage === "confirming" && <p className="text-sm text-ink-faint">Confirming on-chain…</p>}
       {error && (
         <>
-          <p className="text-sm text-red-600">{error}</p>
-          <button
-            onClick={() => {
-              setStage("choose-chain");
-              setChain(null);
-              setToken(null);
-              setError("");
-            }}
-            className="text-xs text-ink-faint hover:text-ink"
-          >
+          <p className="max-w-md text-center text-sm text-red-600">{error}</p>
+          <button onClick={reset} className="text-xs text-ink-faint hover:text-ink">
             ← try again
           </button>
         </>
