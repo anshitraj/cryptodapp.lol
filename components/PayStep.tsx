@@ -20,6 +20,7 @@ import {
 } from "@/lib/chain/constants";
 import ListingEditor, { EditableListing } from "./ListingEditor";
 import TokenIcon from "./TokenIcon";
+import { setSolanaErrorHandler } from "@/lib/chain/solanaErrorBus";
 
 type Treasury = { solana: string; evm: string };
 type Stage = "choose-token" | "choose-wallet" | "connecting" | "paying" | "confirming" | "done" | "error";
@@ -44,6 +45,7 @@ export default function PayStep({
     select,
     connect,
     connected: solanaConnected,
+    disconnect,
     publicKey,
     sendTransaction,
   } = useWallet();
@@ -59,6 +61,8 @@ export default function PayStep({
   const wantsSolanaPay = useRef(false);
   const wantsEvmPay = useRef(false);
   const prevModalOpen = useRef(false);
+  const connectingRef = useRef(false);
+  const activeWalletName = useRef<string>("");
   const connectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function clearConnectTimer() {
@@ -77,6 +81,20 @@ export default function PayStep({
   }
 
   useEffect(() => clearConnectTimer, []);
+
+  // Registered for the component's whole lifetime, not per attempt —
+  // scoping it to a single connect() call races the adapter, whose onError
+  // can fire after that call has already settled and torn the handler down.
+  useEffect(() => {
+    setSolanaErrorHandler((err) => {
+      if (!wantsSolanaPay.current) return;
+      wantsSolanaPay.current = false;
+      connectingRef.current = false;
+      fail(solanaConnectError(err, activeWalletName.current || "Your wallet"));
+    });
+    return () => setSolanaErrorHandler(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function fail(message: string) {
     clearConnectTimer();
@@ -144,13 +162,44 @@ export default function PayStep({
     }
   }
 
-  // select() only flips which adapter is active — connect() has to follow
-  // once that state lands, so this fires the moment `solanaWallet` changes.
-  useEffect(() => {
-    if (wantsSolanaPay.current && solanaWallet && !solanaConnected) {
-      connect().catch((err) => fail((err as Error).message));
+  function solanaConnectError(err: unknown, walletName: string): string {
+    const msg = (err as Error)?.message ?? String(err);
+    if (/user rejected|user denied|rejected the request/i.test(msg)) {
+      return "You declined the connection request in your wallet.";
     }
-  }, [solanaWallet, solanaConnected, connect]);
+    if (/not detected|not installed|no provider/i.test(msg)) {
+      return `${walletName} isn't available in this browser. Make sure the extension is enabled, then reload.`;
+    }
+    if (/local network access/i.test(msg)) {
+      return "Mobile Wallet Adapter only works on Android. On desktop, use the Phantom/Solflare/Backpack extension instead.";
+    }
+    return `${walletName} couldn't connect: ${msg}`;
+  }
+
+  async function connectSolana(walletName: string) {
+    if (connectingRef.current) return;
+    connectingRef.current = true;
+    activeWalletName.current = walletName;
+    try {
+      await connect();
+    } catch (err) {
+      if (wantsSolanaPay.current) {
+        wantsSolanaPay.current = false;
+        fail(solanaConnectError(err, walletName));
+      }
+    } finally {
+      connectingRef.current = false;
+    }
+  }
+
+  // Only fires when select() actually swapped in a *different* adapter. The
+  // already-selected case is handled in pickSolanaWallet — see the note there.
+  useEffect(() => {
+    if (wantsSolanaPay.current && solanaWallet && !solanaConnected && !connectingRef.current) {
+      connectSolana(solanaWallet.adapter.name);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [solanaWallet, solanaConnected]);
 
   useEffect(() => {
     if (wantsSolanaPay.current && solanaConnected && publicKey && token) {
@@ -163,20 +212,55 @@ export default function PayStep({
   function pickSolanaWallet(name: (typeof wallets)[number]["adapter"]["name"]) {
     if (!token) return;
     setError("");
-    if (solanaConnected) {
+    setPayingOn("solana");
+
+    if (solanaConnected && publicKey) {
       runSolanaPayment(token);
       return;
     }
+
     wantsSolanaPay.current = true;
-    setPayingOn("solana");
     setStage("connecting");
-    select(name);
     armConnectTimeout(() => {
       if (wantsSolanaPay.current) {
         wantsSolanaPay.current = false;
         fail(`${name} didn't respond — check for a popup (it can open behind this window), or try again.`);
       }
     });
+
+    // wallet-adapter persists the last chosen wallet in localStorage
+    // (`walletName`), so on every visit after the first the adapter is
+    // ALREADY selected at mount. select() is then a no-op, the effect above
+    // never re-fires, and connect() never gets called — the wallet is never
+    // actually asked to open, and this just sat on "connecting" until the
+    // timeout. Connect straight away when it's already the active adapter.
+    if (solanaWallet?.adapter.name === name) {
+      connectSolana(name);
+      return;
+    }
+
+    select(name);
+  }
+
+  // Clears the persisted wallet selection and drops any half-open session,
+  // for when a wallet is wedged badly enough that reconnecting won't help.
+  async function resetSolanaWallet() {
+    wantsSolanaPay.current = false;
+    connectingRef.current = false;
+    clearConnectTimer();
+    try {
+      await disconnect();
+    } catch {
+      // Already disconnected — nothing to undo.
+    }
+    try {
+      localStorage.removeItem("walletName");
+    } catch {
+      // Storage blocked; the disconnect above is the part that matters.
+    }
+    setStage("choose-wallet");
+    setPayingOn(null);
+    setError("");
   }
 
   // ---- EVM ----
@@ -208,8 +292,19 @@ export default function PayStep({
       runEvmPayment(token);
       return;
     }
+
+    // RainbowKit only hands over openConnectModal once its provider is
+    // mounted and no other modal owns the screen. Optional-chaining a
+    // missing one away would silently do nothing and then sit on
+    // "connecting" until the timeout — say so immediately instead.
+    if (!openConnectModal) {
+      wantsEvmPay.current = false;
+      fail("Wallet chooser isn't ready yet — give it a second and try again.");
+      return;
+    }
+
     setStage("connecting");
-    openConnectModal?.();
+    openConnectModal();
     armConnectTimeout(() => {
       if (wantsEvmPay.current) {
         wantsEvmPay.current = false;
@@ -369,9 +464,14 @@ export default function PayStep({
       {error && (
         <>
           <p className="max-w-md text-center text-sm text-red-600">{error}</p>
-          <button onClick={reset} className="text-xs text-ink-faint hover:text-ink">
-            ← try again
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button onClick={reset} className="text-xs text-ink-faint hover:text-ink">
+              ← try again
+            </button>
+            <button onClick={resetSolanaWallet} className="text-xs text-ink-faint hover:text-ink">
+              reset wallet connection
+            </button>
+          </div>
         </>
       )}
     </div>
