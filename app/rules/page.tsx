@@ -7,7 +7,7 @@ const RULES = [
   },
   {
     title: "Minimum bid",
-    body: "Every bid starts at $5. There's no maximum — bid whatever it takes to hold the spot you want.",
+    body: "Every bid starts at $1. There's no maximum — bid whatever it takes to hold the spot you want.",
   },
   {
     title: "Payment",

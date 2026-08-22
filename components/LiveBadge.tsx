@@ -51,10 +51,15 @@ export default function LiveBadge({ initialVisitorCount }: { initialVisitorCount
   }, []);
 
   useEffect(() => {
-    fetch("/api/stats")
-      .then((res) => res.json())
-      .then((data) => setVisitorCount(data.visitorCount))
-      .catch(() => {});
+    function refresh() {
+      fetch("/api/stats")
+        .then((res) => res.json())
+        .then((data) => setVisitorCount(data.visitorCount))
+        .catch(() => {});
+    }
+    refresh();
+    const timer = setInterval(refresh, 8000);
+    return () => clearInterval(timer);
   }, []);
 
   return (

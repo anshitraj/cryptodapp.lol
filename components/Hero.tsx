@@ -9,7 +9,7 @@ export default function Hero() {
         Crypto Dapp
       </h1>
       <p className="mx-auto mt-6 max-w-xl text-lg text-ink-soft">
-        <span className="font-semibold text-green">Bids start at $5.</span> Bid under
+        <span className="font-semibold text-green">Bids start at $1.</span> Bid under
         the #1 price and you still land on the board — exactly where your amount
         ranks. Paid in USDC or USDT, straight from your wallet, on Solana,
         Ethereum, Base, BNB Chain, or Polygon.

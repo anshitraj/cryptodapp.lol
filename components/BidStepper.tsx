@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 type Props = {
   value: number;
   onChange: (next: number) => void;
@@ -7,7 +9,21 @@ type Props = {
   step?: number;
 };
 
-export default function BidStepper({ value, onChange, min = 5, step = 5 }: Props) {
+export default function BidStepper({ value, onChange, min = 1, step = 1 }: Props) {
+  const [draft, setDraft] = useState(String(value));
+
+  useEffect(() => {
+    setDraft(String(value));
+  }, [value]);
+
+  function commit(raw: string) {
+    const digitsOnly = raw.replace(/[^0-9]/g, "");
+    const parsed = Number(digitsOnly);
+    const next = digitsOnly && Number.isFinite(parsed) ? Math.max(min, parsed) : min;
+    setDraft(String(next));
+    onChange(next);
+  }
+
   return (
     <div className="flex items-center gap-3 sm:gap-5">
       <button
@@ -18,8 +34,19 @@ export default function BidStepper({ value, onChange, min = 5, step = 5 }: Props
       >
         −
       </button>
-      <div className="font-wordmark text-5xl text-blue tabular-nums sm:text-7xl">
-        ${value}
+      <div className="flex items-center font-wordmark text-5xl text-blue tabular-nums sm:text-7xl">
+        <span>$</span>
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value.replace(/[^0-9]/g, ""))}
+          onBlur={(e) => commit(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+          inputMode="numeric"
+          pattern="[0-9]*"
+          aria-label="Bid amount in dollars"
+          className="min-w-0 bg-transparent text-center outline-none"
+          style={{ width: `${Math.max(1, draft.length)}ch` }}
+        />
       </div>
       <button
         type="button"

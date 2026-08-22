@@ -5,14 +5,23 @@ import { treasuryEvmAddress, treasurySolanaAddress } from "@/lib/chain/constants
 // Body: { link, name?, description?, requestedUsd, listingId? }
 // If listingId is omitted, an existing listing with the same link is reused;
 // otherwise a new listing is created from name/description.
+function isValidDappLink(link: string): boolean {
+  try {
+    const url = new URL(link);
+    return (url.protocol === "http:" || url.protocol === "https:") && url.hostname.includes(".");
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const link = String(body.link ?? "").trim();
   const requestedUsd = Number(body.requestedUsd);
 
-  if (!link || !Number.isFinite(requestedUsd) || requestedUsd < 5) {
+  if (!isValidDappLink(link) || !Number.isFinite(requestedUsd) || requestedUsd < 1) {
     return NextResponse.json(
-      { error: "link and requestedUsd (min 5) are required" },
+      { error: "a valid https:// dapp link and requestedUsd (min 1) are required" },
       { status: 400 }
     );
   }
