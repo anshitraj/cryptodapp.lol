@@ -20,7 +20,9 @@ import {
 import ListingEditor, { EditableListing } from "./ListingEditor";
 
 type Treasury = { solana: string; evm: string };
-type Stage = "choose-token" | "choose-wallet" | "paying" | "confirming" | "done" | "error";
+type Stage = "choose-token" | "choose-wallet" | "connecting" | "paying" | "confirming" | "done" | "error";
+
+const CONNECT_TIMEOUT_MS = 30000;
 
 export default function PayStep({
   bidId,
@@ -55,8 +57,27 @@ export default function PayStep({
   const wantsSolanaPay = useRef(false);
   const wantsEvmPay = useRef(false);
   const prevModalOpen = useRef(false);
+  const connectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function clearConnectTimer() {
+    if (connectTimer.current) {
+      clearTimeout(connectTimer.current);
+      connectTimer.current = null;
+    }
+  }
+
+  // Whatever we're waiting on next (a wallet's own popup, an extension that
+  // never responds, a modal stuck behind the window) — if it doesn't land in
+  // 30s, hand control back instead of leaving the screen stuck forever.
+  function armConnectTimeout(onExpire: () => void) {
+    clearConnectTimer();
+    connectTimer.current = setTimeout(onExpire, CONNECT_TIMEOUT_MS);
+  }
+
+  useEffect(() => clearConnectTimer, []);
 
   function fail(message: string) {
+    clearConnectTimer();
     setError(message);
     setStage("error");
   }
@@ -86,6 +107,7 @@ export default function PayStep({
 
   async function runSolanaPayment(chosenToken: TokenSymbol) {
     if (!publicKey) return;
+    clearConnectTimer();
     setPayingOn("solana");
     setStage("paying");
     setError("");
@@ -127,8 +149,15 @@ export default function PayStep({
       return;
     }
     wantsSolanaPay.current = true;
+    setPayingOn("solana");
+    setStage("connecting");
     select(name);
-    setStage("paying");
+    armConnectTimeout(() => {
+      if (wantsSolanaPay.current) {
+        wantsSolanaPay.current = false;
+        fail(`${name} didn't respond — check for a popup (it can open behind this window), or try again.`);
+      }
+    });
   }
 
   // ---- EVM ----
@@ -155,25 +184,32 @@ export default function PayStep({
   function startEvm() {
     if (!token) return;
     setError("");
+    wantsEvmPay.current = true;
     if (evmConnected) {
       runEvmPayment(token);
       return;
     }
-    wantsEvmPay.current = true;
-    setStage("paying");
+    setStage("connecting");
     openConnectModal?.();
+    armConnectTimeout(() => {
+      if (wantsEvmPay.current) {
+        wantsEvmPay.current = false;
+        fail("Wallet connection didn't complete — check for a popup, or try again.");
+      }
+    });
   }
 
   useEffect(() => {
     if (wantsEvmPay.current && evmConnected && token) {
       wantsEvmPay.current = false;
+      clearConnectTimer();
       runEvmPayment(token);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [evmConnected]);
 
   // Closing the connect modal without connecting shouldn't strand the UI on
-  // "paying".
+  // "connecting".
   useEffect(() => {
     if (prevModalOpen.current && !connectModalOpen && !evmConnected && wantsEvmPay.current) {
       wantsEvmPay.current = false;
@@ -187,8 +223,18 @@ export default function PayStep({
   function reset() {
     wantsSolanaPay.current = false;
     wantsEvmPay.current = false;
+    clearConnectTimer();
     setStage("choose-token");
     setToken(null);
+    setPayingOn(null);
+    setError("");
+  }
+
+  function backToWallets() {
+    wantsSolanaPay.current = false;
+    wantsEvmPay.current = false;
+    clearConnectTimer();
+    setStage("choose-wallet");
     setPayingOn(null);
     setError("");
   }
@@ -283,8 +329,16 @@ export default function PayStep({
         Paying ${amountUsd} in {token}
         {payingOn ? ` on ${CHAIN_LABELS[payingOn]}` : ""}
       </p>
+      {stage === "connecting" && (
+        <p className="text-sm text-ink-faint">Waiting for your wallet to connect…</p>
+      )}
       {stage === "paying" && <p className="text-sm text-ink-faint">Confirm the transfer in your wallet…</p>}
       {stage === "confirming" && <p className="text-sm text-ink-faint">Confirming on-chain…</p>}
+      {(stage === "connecting" || stage === "paying") && (
+        <button onClick={backToWallets} className="text-xs text-ink-faint hover:text-ink">
+          Stuck? ← cancel and pick again
+        </button>
+      )}
       {error && (
         <>
           <p className="max-w-md text-center text-sm text-red-600">{error}</p>
