@@ -37,7 +37,8 @@ export async function POST(
     return NextResponse.json({ error: "bid not found" }, { status: 404 });
   }
   if (bid.status === "paid") {
-    return NextResponse.json({ ok: true, alreadyPaid: true });
+    const listing = await getListing(db, bid.listing_id);
+    return NextResponse.json({ ok: true, alreadyPaid: true, listing });
   }
 
   const requestedUsd = Number(bid.requested_usd);
@@ -69,8 +70,18 @@ export async function POST(
   }
 
   await enrichListingFromUrl(db, bid.listing_id);
+  const listing = await getListing(db, bid.listing_id);
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, listing });
+}
+
+async function getListing(db: ReturnType<typeof supabaseAdmin>, listingId: string) {
+  const { data } = await db
+    .from("listings")
+    .select("id, name, description, icon_url, link")
+    .eq("id", listingId)
+    .maybeSingle();
+  return data ?? null;
 }
 
 // Auto-fills the listing's icon and description from its own site's Open

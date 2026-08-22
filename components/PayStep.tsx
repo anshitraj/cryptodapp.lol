@@ -6,6 +6,7 @@ import { PublicKey } from "@solana/web3.js";
 import { buildSolanaTransfer } from "@/lib/chain/solanaWallet";
 import { payEvmToken } from "@/lib/chain/evmWallet";
 import { ChainKey, EvmChainKey, TokenSymbol } from "@/lib/chain/constants";
+import ListingEditor, { EditableListing } from "./ListingEditor";
 
 type Treasury = { solana: string; evm: string };
 type Stage = "choose-chain" | "choose-token" | "picking-wallet" | "paying" | "confirming" | "done" | "error";
@@ -35,6 +36,7 @@ export default function PayStep({
   const [chain, setChain] = useState<ChainKey | null>(null);
   const [token, setToken] = useState<TokenSymbol | null>(null);
   const [error, setError] = useState("");
+  const [listing, setListing] = useState<EditableListing | null>(null);
   const wantsSolanaPay = useRef(false);
 
   async function confirmWithServer(chosenChain: ChainKey, chosenToken: TokenSymbol, txRef: string) {
@@ -47,6 +49,7 @@ export default function PayStep({
       });
       const data = await res.json();
       if (res.ok && data.ok) {
+        if (data.listing) setListing(data.listing);
         setStage("done");
         onDone();
       } else {
@@ -146,6 +149,7 @@ export default function PayStep({
   }
 
   if (stage === "done") {
+    if (listing) return <ListingEditor bidId={bidId} listing={listing} />;
     return <p className="text-center font-semibold text-green">Payment confirmed — you're on the board.</p>;
   }
 
