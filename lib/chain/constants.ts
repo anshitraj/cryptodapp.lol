@@ -126,6 +126,24 @@ export function treasuryEvmAddress(): `0x${string}` {
   return addr as `0x${string}`;
 }
 
+// api.mainnet-beta.solana.com 403s browser traffic outright, so it can't be
+// the default anywhere the browser will hit it. publicnode does serve
+// browsers, and works with no key — good enough to run on, though a
+// dedicated Helius/QuickNode endpoint is worth it under real traffic.
+const DEFAULT_SOLANA_RPC = "https://solana-rpc.publicnode.com";
+
+// Client-side (wallet connection, sending the transfer). Must be NEXT_PUBLIC_
+// or the browser silently can't see it and falls back to the default.
+export function solanaRpcUrlPublic(): string {
+  return process.env.NEXT_PUBLIC_SOLANA_RPC_URL || DEFAULT_SOLANA_RPC;
+}
+
+// Server-side (verifying a payment landed). Prefers the private key-bearing
+// endpoint if one is set, so a paid RPC plan isn't exposed to the browser.
 export function solanaRpcUrl(): string {
-  return process.env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
+  return (
+    process.env.SOLANA_RPC_URL ||
+    process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
+    DEFAULT_SOLANA_RPC
+  );
 }

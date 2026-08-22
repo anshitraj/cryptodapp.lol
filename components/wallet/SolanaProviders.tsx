@@ -2,12 +2,12 @@
 
 import { useMemo } from "react";
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
-import { solanaRpcUrl } from "@/lib/chain/constants";
+import { solanaRpcUrlPublic } from "@/lib/chain/constants";
 
 // Wallet Standard wallets (Phantom, Solflare, Backpack, etc) register
 // themselves automatically — nothing needed in the `wallets` array below.
 export default function SolanaProviders({ children }: { children: React.ReactNode }) {
-  const endpoint = useMemo(() => solanaRpcUrl(), []);
+  const endpoint = useMemo(() => solanaRpcUrlPublic(), []);
 
   return (
     <ConnectionProvider endpoint={endpoint}>
