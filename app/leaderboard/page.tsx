@@ -1,22 +1,11 @@
 import Header from "@/components/Header";
-import LeaderboardRow, { LeaderboardEntry } from "@/components/Leaderboard/LeaderboardRow";
-import { supabaseAdmin } from "@/lib/supabase/server";
+import LeaderboardRow from "@/components/Leaderboard/LeaderboardRow";
+import { getLeaderboard } from "@/lib/leaderboard";
 
 export const dynamic = "force-dynamic";
 
-async function fetchLeaderboard(): Promise<LeaderboardEntry[]> {
-  try {
-    const db = supabaseAdmin();
-    const { data } = await db.from("leaderboard").select("*");
-    return (data ?? []) as LeaderboardEntry[];
-  } catch (err) {
-    console.error("[leaderboard] falling back to empty list:", err);
-    return [];
-  }
-}
-
 export default async function LeaderboardPage() {
-  const entries = await fetchLeaderboard();
+  const entries = await getLeaderboard();
   const top = entries.slice(0, 10);
   const rest = entries.slice(10);
 

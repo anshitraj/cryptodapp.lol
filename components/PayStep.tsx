@@ -31,11 +31,13 @@ export default function PayStep({
   bidId,
   amountUsd,
   treasury,
+  sourceLink,
   onDone,
 }: {
   bidId: string;
   amountUsd: number;
   treasury: Treasury;
+  sourceLink: string;
   onDone: () => void;
 }) {
   const { connection } = useConnection();
@@ -353,6 +355,17 @@ export default function PayStep({
     setError("");
   }
 
+  // Mobile browsers do not inject a Solana provider. Phantom's documented
+  // browse deeplink reopens this exact bid inside Phantom, where its Wallet
+  // Standard provider is available to the normal Solana adapter flow.
+  function openInPhantom() {
+    const resumeUrl = new URL(window.location.href);
+    resumeUrl.searchParams.set("link", sourceLink);
+    resumeUrl.searchParams.set("floor", String(amountUsd));
+    const deeplink = `https://phantom.app/ul/browse/${encodeURIComponent(resumeUrl.toString())}?ref=${encodeURIComponent(window.location.origin)}`;
+    window.location.assign(deeplink);
+  }
+
   if (stage === "done") {
     if (listing) return <ListingEditor bidId={bidId} listing={listing} />;
     return <p className="text-center font-semibold text-green">Payment confirmed — you&apos;re on the board.</p>;
@@ -420,9 +433,21 @@ export default function PayStep({
               </button>
             ))
           ) : (
-            <p className="text-xs text-ink-faint">
-              No Solana wallet detected — install Phantom, Solflare, or Backpack.
-            </p>
+            <div className="flex flex-col items-start gap-2">
+              <p className="text-xs text-ink-faint">
+                No Solana wallet detected — install Phantom, Solflare, or Backpack.
+              </p>
+              <button
+                type="button"
+                onClick={openInPhantom}
+                className="rounded-xl bg-blue px-4 py-2 text-xs font-semibold text-white sm:hidden"
+              >
+                Open this payment in Phantom
+              </button>
+              <p className="text-[11px] text-ink-faint sm:hidden">
+                Your link and bid amount will be kept when Phantom opens.
+              </p>
+            </div>
           )}
         </div>
 

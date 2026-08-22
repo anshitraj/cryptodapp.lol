@@ -85,6 +85,7 @@ export default function ClaimForm({
           bidId={pendingBid.bidId}
           amountUsd={amount}
           treasury={pendingBid.treasury}
+          sourceLink={link}
           onDone={() => {}}
         />
       </div>
@@ -136,13 +137,13 @@ export default function ClaimForm({
           disabled={submitting}
           className="shrink-0 rounded-full bg-blue-claim px-6 py-3.5 font-semibold text-white transition hover:brightness-105 disabled:opacity-60 sm:py-3"
         >
-          {submitting ? "Starting…" : "Claim #1"}
+          {submitting ? "Starting…" : `Claim · $${amount}`}
         </button>
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <p className="text-sm text-ink-faint">
+      <p className="max-w-full text-center text-sm text-ink-faint">
         Already listed? Drop in the same link to push your bid
       </p>
     </div>
