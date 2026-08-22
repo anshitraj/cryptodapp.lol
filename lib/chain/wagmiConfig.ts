@@ -15,14 +15,20 @@ import {
 
 const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "";
 
-// Curated EVM-only list, deliberately excluding both `injectedWallet` and
-// EIP-6963 auto-discovery (see multiInjectedProviderDiscovery below).
-// Discovery surfaced Phantom in the EVM connect modal — Phantom announces
-// itself as an EVM provider, so it looked like a valid choice here and then
-// stalled on connect. Phantom belongs in the Solana group instead, which is
-// where PayStep now lists it.
+// Curated EVM-only list, deliberately excluding `injectedWallet` (the
+// generic "Browser Wallet" fallback) — Phantom announces itself as an EVM
+// provider too and injectedWallet would surface it here, which belongs in
+// the Solana group PayStep already lists it under instead.
 //
-// Coinbase Wallet is also intentionally absent: its connector pulls in
+// EIP-6963 discovery (multiInjectedProviderDiscovery) is left ON, not off.
+// Each named connector below matches its own extension by EIP-6963 `rdns`,
+// which is what actually works when several wallet extensions are
+// installed at once — legacy window.ethereum.isMetaMask-style flag sniffing
+// (what you fall back to with discovery off) breaks the moment more than
+// one extension is fighting over that global. If a stuck connect ever
+// happens now, PayStep's 30s timeout + cancel button gets you out of it.
+//
+// Coinbase Wallet is intentionally absent: its connector pulls in
 // @coinbase/cdp-sdk's x402 client, which breaks the Turbopack build. Coinbase
 // Wallet users can still connect through WalletConnect.
 //
@@ -45,7 +51,6 @@ const connectors = connectorsForWallets(wallets, {
 export const wagmiConfig = createConfig({
   connectors,
   chains: [mainnet, base, bsc, polygon],
-  multiInjectedProviderDiscovery: false,
   transports: {
     [mainnet.id]: http(),
     [base.id]: http(),

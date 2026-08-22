@@ -107,6 +107,25 @@ export default function PayStep({
 
   // ---- Solana ----
 
+  // Polls signature status directly instead of the blockhash-object form of
+  // confirmTransaction — that form fails if the locally-tracked blockhash
+  // doesn't line up with what a (possibly multi-node, free-tier) RPC actually
+  // used to land the transaction. This only cares whether the signature
+  // itself landed.
+  async function waitForSolanaConfirmation(signature: string, timeoutMs = 45000): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const { value } = await connection.getSignatureStatuses([signature]);
+      const status = value[0];
+      if (status?.err) throw new Error(`Transaction failed on-chain: ${JSON.stringify(status.err)}`);
+      if (status?.confirmationStatus === "confirmed" || status?.confirmationStatus === "finalized") return;
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    throw new Error(
+      "Timed out waiting for on-chain confirmation. If it actually went through, check the leaderboard in a minute — otherwise try again."
+    );
+  }
+
   async function runSolanaPayment(chosenToken: TokenSymbol) {
     if (!publicKey) return;
     clearConnectTimer();
@@ -117,10 +136,8 @@ export default function PayStep({
       const treasuryKey = new PublicKey(treasury.solana);
       const tx = await buildSolanaTransfer(connection, publicKey, treasuryKey, chosenToken, amountUsd);
       const signature = await sendTransaction(tx, connection);
-      await connection.confirmTransaction(
-        { signature, blockhash: tx.recentBlockhash!, lastValidBlockHeight: tx.lastValidBlockHeight! },
-        "confirmed"
-      );
+      setStage("confirming");
+      await waitForSolanaConfirmation(signature);
       await confirmWithServer("solana", chosenToken, signature);
     } catch (err) {
       fail((err as Error).message);

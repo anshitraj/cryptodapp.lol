@@ -1,19 +1,23 @@
 import { TokenSymbol } from "@/lib/chain/constants";
 
-const STYLES: Record<TokenSymbol, { bg: string; glyph: string }> = {
-  USDC: { bg: "#2775CA", glyph: "$" },
-  USDT: { bg: "#26A17B", glyph: "T" },
+// Real brand assets in /public — USDT's is a wide non-square mark, USDC's is
+// a circular badge. object-contain + a fixed square box keeps them the same
+// visual size and baseline-aligned next to text regardless of that.
+const SRC: Record<TokenSymbol, string> = {
+  USDC: "/Circle_USDC_Logo.svg",
+  USDT: "/logo.svg",
 };
 
 export default function TokenIcon({ token, size = 20 }: { token: TokenSymbol; size?: number }) {
-  const { bg, glyph } = STYLES[token];
   return (
-    <span
-      style={{ width: size, height: size, minWidth: size, background: bg, fontSize: size * 0.58 }}
-      className="inline-flex shrink-0 items-center justify-center rounded-full font-bold text-white"
-      aria-hidden="true"
-    >
-      {glyph}
-    </span>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={SRC[token]}
+      alt={token}
+      width={size}
+      height={size}
+      style={{ width: size, height: size, minWidth: size }}
+      className="inline-block shrink-0 object-contain align-middle"
+    />
   );
 }
